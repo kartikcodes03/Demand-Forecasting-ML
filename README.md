@@ -1,4 +1,4 @@
-# G35 — Demand Forecasting Model
+# Demand-Forecasting-ML
 
 A machine learning project that analyzes historical Amazon sales and forecasts daily product demand using a **Random Forest Regressor**. The project also compares Random Forest and Extra Trees models.
 
@@ -17,7 +17,7 @@ A machine learning project that analyzes historical Amazon sales and forecasts d
 ## Repository structure
 
 ```text
-G35-Demand-Forecasting/
+Demand-Forecasting-ML/
 │
 ├── app.py
 ├── requirements.txt
@@ -25,10 +25,10 @@ G35-Demand-Forecasting/
 ├── .gitignore
 │
 └── artifacts/
-    ├── G35_Demand_Model.pkl
-    ├── G35_Cleaned_Data.csv
-    ├── G35_Forecast.csv
-    └── G35_Model_Results.csv
+    ├── Demand_Model.pkl
+    ├── Cleaned_Data.csv
+    ├── Forecast.csv
+    └── Model_Results.csv
 ```
 
 ## Dataset
