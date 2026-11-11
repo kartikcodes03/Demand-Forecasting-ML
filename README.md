@@ -123,8 +123,7 @@ The supplied model was saved with **scikit-learn 1.6.1**. The `requirements.txt`
 
 ## Team
 
-**Team Name:** G35  
-**Project Title:** Building a Demand Forecasting Model  
+ **Project Title:** Building a Demand Forecasting Model  
 **Project Type:** Machine Learning / Regression / Time-Series Forecasting
 
 ---
