@@ -3,92 +3,50 @@ import pandas as pd
 import joblib
 from pathlib import Path
 
-# Setting page configuration
+# Page setup
 st.set_page_config(page_title="Demand Forecasting", page_icon="📦", layout="wide")
 
-# Defining project file paths
+# Project file locations
 BASE = Path(__file__).resolve().parent
-
-# Loading trained machine learning model
 MODEL_PATH = BASE / "artifacts" / "Demand_Model.pkl"
-
-# Loading cleaned historical dataset
-DATA_PATH = BASE / "artifacts" / "Cleaned_Data.csv"
-
-# Loading future demand forecast
-FORECAST_PATH = BASE / "artifacts" / "Forecast.csv"
-
-# Loading model evaluation results
+SAMPLE_PATH = BASE / "artifacts" / "Cleaned_Data.csv"
 RESULTS_PATH = BASE / "artifacts" / "Model_Results.csv"
 
-# Loading the trained ML model
 @st.cache_resource
 def load_model():
     return joblib.load(MODEL_PATH)
 
-# Loading historical demand data
-@st.cache_data
-def load_data():
-    d = pd.read_csv(DATA_PATH)
-    d["Date"] = pd.to_datetime(d["Date"])
-    return d.sort_values("Date")
+def prepare_data(df):
+    # Standardize column names
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    date_col = next((c for c in df.columns if c.lower() in ["date", "order date", "order_date"]), None)
+    qty_col = next((c for c in df.columns if c.lower() in ["demand", "qty", "quantity", "units sold", "units_sold"]), None)
 
-# Loading saved CSV files
-@st.cache_data
-def load_csv(path):
-    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+    if date_col is None or qty_col is None:
+        raise ValueError("CSV must contain a Date column and a Demand or Qty column.")
 
-# Displaying project heading
-st.title("📦 Demand Forecasting System")
-st.write("Daily demand prediction using Random Forest and Extra Trees.")
-st.caption("Team Project: G35")
+    # Convert dates and quantities
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True)
+    df[qty_col] = pd.to_numeric(df[qty_col], errors="coerce")
+    df = df.dropna(subset=[date_col, qty_col])
 
-# Checking required project files
-missing = [p.name for p in [MODEL_PATH, DATA_PATH] if not p.exists()]
-if missing:
-    st.error("Missing files: " + ", ".join(missing))
-    st.stop()
+    # Aggregate sales into daily demand
+    daily = df.groupby(df[date_col].dt.normalize())[qty_col].sum().reset_index()
+    daily.columns = ["Date", "Demand"]
+    daily = daily.sort_values("Date").reset_index(drop=True)
 
-# Loading model and dataset
-try:
-    model = load_model()
-    data = load_data()
-except Exception as e:
-    st.error(f"Could not load model or dataset: {e}")
-    st.stop()
+    if len(daily) < 7:
+        raise ValueError("At least 7 different dates are required.")
+    return daily
 
-saved_forecast = load_csv(FORECAST_PATH)
-results = load_csv(RESULTS_PATH)
-
-# Showing project summary
-st.sidebar.header("Project Details")
-st.sidebar.write("Project: Demand Forecasting")
-st.sidebar.write("Forecast period: 7 days")
-st.sidebar.caption("Historical dataset covers a limited period in 2022.")
-
-# Showing key performance indicators
-c1, c2, c3 = st.columns(3)
-c1.metric("Historical Days", f"{len(data):,}")
-c2.metric("Total Units Sold", f"{data['Demand'].sum():,.0f}")
-c3.metric("Average Daily Demand", f"{data['Demand'].mean():,.1f}")
-
-st.write(f"Data period: {data['Date'].min().date()} to {data['Date'].max().date()}")
-
-# Plotting historical demand with Streamlit's built-in chart
-st.subheader("1. Historical Daily Demand")
-st.line_chart(data.set_index("Date")[["Demand"]], use_container_width=True)
-
-# Generating future demand predictions
-st.subheader("2. Generate 7-Day Forecast")
-if st.button("Generate 7-Day Forecast", type="primary"):
-    history = data.set_index("Date")["Demand"].astype(float).copy()
-    rows = []
-
-    for _ in range(7):
+def make_forecast(model, daily, days=7):
+    # Generate future dates using the uploaded historical data
+    history = daily.set_index("Date")["Demand"].astype(float).copy()
+    output = []
+    for _ in range(days):
         next_date = history.index[-1] + pd.Timedelta(days=1)
-
-        # Creating input features using previous demand
-        x_new = pd.DataFrame([{
+        features = pd.DataFrame([{
             "Day": next_date.day,
             "Weekday": next_date.dayofweek,
             "Month": next_date.month,
@@ -97,55 +55,86 @@ if st.button("Generate 7-Day Forecast", type="primary"):
             "Lag7": history.iloc[-7],
             "Rolling_Mean": history.iloc[-7:].mean()
         }])
+        prediction = max(0, float(model.predict(features)[0]))
+        output.append({"Date": next_date, "Predicted Demand": round(prediction, 2)})
+        history.loc[next_date] = prediction
+    return pd.DataFrame(output)
 
-        # Predicting demand for the next day
-        pred = max(0, float(model.predict(x_new)[0]))
-        rows.append({"Date": next_date, "Predicted Demand": round(pred, 2)})
-        history.loc[next_date] = pred
+st.title("📦 Demand Forecasting System")
+st.write("Upload your own historical sales CSV and predict demand for the next 7 days.")
 
-    st.session_state["forecast_result"] = pd.DataFrame(rows)
+# Load the trained Random Forest pipeline
+if not MODEL_PATH.exists():
+    st.error("Model file missing. Check artifacts/Demand_Model.pkl in GitHub.")
+    st.stop()
 
-# Displaying generated forecast and chart
-if "forecast_result" in st.session_state:
-    forecast = st.session_state["forecast_result"]
-    st.dataframe(forecast, use_container_width=True)
-
-    st.subheader("3. Historical vs Forecast Demand")
-    recent = data.tail(21).set_index("Date")[["Demand"]]
-    future = forecast.rename(columns={"Predicted Demand": "Demand"}).set_index("Date")[["Demand"]]
-    st.line_chart(pd.concat([recent, future]), use_container_width=True)
-
-    # Downloading forecast as CSV
-    st.download_button(
-        "Download Forecast CSV",
-        forecast.to_csv(index=False).encode("utf-8"),
-        "Demand_Forecast_Next_7_Days.csv",
-        "text/csv"
-    )
-elif not saved_forecast.empty:
-    st.info("Previously saved forecast:")
-    st.dataframe(saved_forecast, use_container_width=True)
-
-# Displaying model evaluation metrics
-st.subheader("4. Model Performance")
-if not results.empty:
-    st.dataframe(results, use_container_width=True)
-    if {"Model", "RMSE"}.issubset(results.columns):
-        st.bar_chart(results.set_index("Model")[["RMSE"]])
-else:
-    st.info("Model results file was not found.")
-
-# Displaying feature importance
-st.subheader("5. Feature Importance")
 try:
-    model_step = model.named_steps["model"]
-    names = ["Day", "Weekday", "Month", "Lag1", "Lag2", "Lag7", "Rolling_Mean"]
-    importance = pd.DataFrame(
-        {"Importance": model_step.feature_importances_}, index=names
-    ).sort_values("Importance")
-    st.bar_chart(importance)
+    model = load_model()
 except Exception as e:
-    st.info(f"Feature importance unavailable: {e}")
+    st.error(f"Could not load trained model: {e}")
+    st.stop()
+
+st.sidebar.header("Project Details")
+st.sidebar.write("Model: Random Forest Pipeline")
+st.sidebar.write("Forecast horizon: 7 days")
+
+# Upload the user's CSV file
+st.subheader("1. Upload Your Sales Data")
+st.write("Required columns: Date and Demand or Qty.")
+st.caption("Example: Date, Qty  |  01-06-2022, 25")
+uploaded_file = st.file_uploader("Choose your CSV file", type=["csv"])
+
+daily = None
+if uploaded_file is not None:
+    try:
+        raw_data = pd.read_csv(uploaded_file, on_bad_lines="skip")
+        daily = prepare_data(raw_data)
+        st.success("Your CSV was uploaded and processed successfully.")
+        st.write("Daily demand preview:")
+        st.dataframe(daily.tail(10), use_container_width=True)
+    except Exception as e:
+        st.error(f"Could not process CSV: {e}")
+        st.info("Please check the column names and make sure there are at least 7 dates.")
+        st.stop()
+else:
+    st.info("Upload a CSV file to create a forecast.")
+    if SAMPLE_PATH.exists() and st.checkbox("Use sample project data"):
+        daily = prepare_data(pd.read_csv(SAMPLE_PATH))
+        st.dataframe(daily.tail(10), use_container_width=True)
+
+if daily is not None:
+    st.subheader("2. Uploaded Data Summary")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Historical Days", f"{len(daily):,}")
+    c2.metric("Total Demand", f"{daily['Demand'].sum():,.0f}")
+    c3.metric("Average Daily Demand", f"{daily['Demand'].mean():,.1f}")
+    st.write(f"Date range: {daily['Date'].min().date()} to {daily['Date'].max().date()}")
+
+    st.subheader("3. Historical Demand Graph")
+    st.line_chart(daily.set_index("Date")[["Demand"]])
+
+    st.subheader("4. Generate 7-Day Forecast")
+    if st.button("Predict Next 7 Days", type="primary"):
+        st.session_state["user_forecast"] = make_forecast(model, daily, 7)
+
+    if "user_forecast" in st.session_state:
+        forecast = st.session_state["user_forecast"]
+        st.success("Your 7-day forecast is ready.")
+        st.dataframe(forecast, use_container_width=True)
+        st.subheader("5. Historical vs Predicted Demand")
+        actual = daily.tail(21).set_index("Date")[["Demand"]]
+        future = forecast.rename(columns={"Predicted Demand": "Demand"}).set_index("Date")[["Demand"]]
+        st.line_chart(pd.concat([actual, future]))
+        st.download_button(
+            "Download Forecast CSV",
+            forecast.to_csv(index=False).encode("utf-8"),
+            "Your_Demand_Forecast.csv",
+            "text/csv"
+        )
+
+    st.subheader("6. Model Evaluation")
+    if RESULTS_PATH.exists():
+        st.dataframe(pd.read_csv(RESULTS_PATH), use_container_width=True)
 
 st.markdown("---")
 st.caption("Academic Machine Learning Project | Demand Forecasting")
