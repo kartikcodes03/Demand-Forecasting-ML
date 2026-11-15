@@ -8,10 +8,18 @@ st.set_page_config(page_title="Demand Forecasting", page_icon="📦", layout="wi
 
 # Defining project file paths
 BASE = Path(__file__).resolve().parent
-MODEL_PATH = BASE / "artifacts" / "G35_Demand_Model.pkl"
-DATA_PATH = BASE / "artifacts" / "G35_Cleaned_Data.csv"
-FORECAST_PATH = BASE / "artifacts" / "G35_Forecast.csv"
-RESULTS_PATH = BASE / "artifacts" / "G35_Model_Results.csv"
+
+# Loading trained machine learning model
+MODEL_PATH = BASE / "artifacts" / "Demand_Model.pkl"
+
+# Loading cleaned historical dataset
+DATA_PATH = BASE / "artifacts" / "Cleaned_Data.csv"
+
+# Loading future demand forecast
+FORECAST_PATH = BASE / "artifacts" / "Forecast.csv"
+
+# Loading model evaluation results
+RESULTS_PATH = BASE / "artifacts" / "Model_Results.csv"
 
 # Loading the trained ML model
 @st.cache_resource
